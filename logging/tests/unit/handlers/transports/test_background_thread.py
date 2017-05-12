@@ -15,6 +15,7 @@
 import logging
 import time
 import unittest
+from google.cloud.logging.resource import Resource
 
 
 class TestBackgroundThreadHandler(unittest.TestCase):
@@ -38,6 +39,13 @@ class TestBackgroundThreadHandler(unittest.TestCase):
         self.assertEqual(transport.worker.logger.name, NAME)
 
     def test_send(self):
+        RESOURCE = Resource(
+            type='gae_app',
+            labels={
+                'module_id': 'default',
+                'version_id': 'test',
+        })
+
         client = _Client(self.PROJECT)
         NAME = 'python_logger'
         transport = self._make_one(client, NAME)
@@ -47,13 +55,13 @@ class TestBackgroundThreadHandler(unittest.TestCase):
         message = 'hello world'
         record = logging.LogRecord(python_logger_name, logging.INFO,
                                    None, None, message, None, None)
-        transport.send(record, message)
+        transport.send(record, message, RESOURCE)
 
         EXPECTED_STRUCT = {
             'message': message,
             'python_logger': python_logger_name
         }
-        EXPECTED_SENT = (EXPECTED_STRUCT, 'INFO')
+        EXPECTED_SENT = (EXPECTED_STRUCT, 'INFO', RESOURCE)
         self.assertEqual(transport.worker.batch.log_struct_called_with,
                          EXPECTED_SENT)
 
@@ -145,13 +153,14 @@ class TestWorker(unittest.TestCase):
 
 
 class _Batch(object):
+    from google.cloud.logging.logger import _GLOBAL_RESOURCE
 
     def __init__(self):
         self.entries = []
         self.commit_called = False
 
-    def log_struct(self, record, severity=logging.INFO):
-        self.log_struct_called_with = (record, severity)
+    def log_struct(self, record, severity=logging.INFO, resource=_GLOBAL_RESOURCE):
+        self.log_struct_called_with = (record, severity, resource)
         self.entries.append(record)
 
     def commit(self):

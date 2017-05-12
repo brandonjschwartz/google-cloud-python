@@ -22,8 +22,10 @@ import copy
 import threading
 
 from google.cloud.logging.handlers.transports.base import Transport
+from google.cloud.logging.resource import Resource
 
 _WORKER_THREAD_NAME = 'google.cloud.logging.handlers.transport.Worker'
+_GLOBAL_RESOURCE = Resource(type='global', labels={})
 
 
 class _Worker(object):
@@ -130,14 +132,14 @@ class _Worker(object):
         self._stop_condition.release()
         self.stopped = True
 
-    def enqueue(self, record, message):
+    def enqueue(self, record, message, resource=_GLOBAL_RESOURCE):
         """Queues up a log entry to be written by the background thread."""
         try:
             self._entries_condition.acquire()
             if self.stopping:
                 return
             info = {'message': message, 'python_logger': record.name}
-            self.batch.log_struct(info, severity=record.levelname)
+            self.batch.log_struct(info, severity=record.levelname, resource=resource)
             self._entries_condition.notify()
         finally:
             self._entries_condition.release()
@@ -156,7 +158,7 @@ class BackgroundThreadTransport(Transport):
         logger = self.client.logger(name)
         self.worker = _Worker(logger)
 
-    def send(self, record, message):
+    def send(self, record, message, resource=_GLOBAL_RESOURCE):
         """Overrides Transport.send().
 
         :type record: :class:`logging.LogRecord`
@@ -165,5 +167,9 @@ class BackgroundThreadTransport(Transport):
         :type message: str
         :param message: The message from the ``LogRecord`` after being
                         formatted by the associated log formatters.
+
+        :type resource: :class:`~google.cloud.logging.resource.Resource`
+        :param resource: Monitored resource of the entry, defaults
+                         to the global resource type.
         """
-        self.worker.enqueue(record, message)
+        self.worker.enqueue(record, message, resource)
